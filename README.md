@@ -1,57 +1,58 @@
 # SlotPilot
 
-A booking & scheduling engine for service businesses (salons, clinics, tutors,
-studios) with **first-class double-booking protection**. Customers see real-time
-availability; staff calendars never get two bookings in the same slot.
+Движок бронирования и расписаний для сервисных бизнесов (салоны, клиники, репетиторы,
+студии) с **защитой от двойного бронирования из коробки**. Клиенты видят доступность в
+реальном времени; в календарь сотрудника никогда не попадают две записи в один слот.
 
-> Portfolio note: clean **ports & adapters** architecture, a pure deterministic
-> scheduling engine, strict TypeScript, and full unit + e2e test coverage.
+> Заметка для портфолио: чистая архитектура **ports & adapters**, чистый
+> детерминированный движок расписаний, строгий TypeScript и полное покрытие
+> unit- и e2e-тестами.
 
-## Stack
+## Стек
 
 - **TypeScript** (strict, `noUncheckedIndexedAccess`) · **Node 22**
-- **NestJS** (HTTP) · **class-validator** request validation
+- **NestJS** (HTTP) · валидация запросов **class-validator**
 - **Jest** + **supertest** (unit + e2e) · **Docker** · **GitHub Actions**
 
-## Architecture
+## Архитектура
 
 ```
 src/
-  domain/          pure scheduling logic — no framework, no I/O
-    time.ts        half-open intervals, overlap, UTC helpers
-    scheduling.ts  slot generation + bookability rules
-    booking.ts     entities (Service, Resource, Booking)
-  application/     use-cases + ports (repository/clock interfaces)
-  infrastructure/  adapters (in-memory repos; swap for Postgres in prod)
-  http/            NestJS controller, DTOs, domain-error → HTTP filter
+  domain/          чистая логика расписаний — без фреймворка, без I/O
+    time.ts        полуоткрытые интервалы, пересечения, UTC-хелперы
+    scheduling.ts  генерация слотов + правила бронируемости
+    booking.ts     сущности (Service, Resource, Booking)
+  application/     use-cases + порты (интерфейсы репозитория/часов)
+  infrastructure/  адаптеры (in-memory репозитории; в проде меняются на Postgres)
+  http/            NestJS-контроллер, DTO, фильтр доменная-ошибка → HTTP
 ```
 
-The **scheduling engine is pure**: same inputs always produce the same slots,
-so it is trivially testable. The **no-overlap invariant** is enforced atomically
-at the repository boundary — in production this maps to a Postgres
-`EXCLUDE USING gist (resource_id WITH =, tstzrange(start,end) WITH &&)`
-exclusion constraint.
+**Движок расписаний чистый**: одни и те же входные данные всегда дают одни и те же
+слоты, поэтому он тривиально тестируется. **Инвариант отсутствия пересечений**
+обеспечивается атомарно на границе репозитория — в продакшене это отображается в
+Postgres-ограничение исключения
+`EXCLUDE USING gist (resource_id WITH =, tstzrange(start,end) WITH &&)`.
 
-### Correctness guarantees (covered by tests)
+### Гарантии корректности (покрыты тестами)
 
-- Half-open intervals: back-to-back bookings (09:00–09:30, 09:30–10:00) never
-  collide, but any true overlap is rejected.
-- Slots in the past, outside business hours, or crossing UTC midnight are rejected.
-- Booked slots disappear from availability; canceling frees them again.
-- Concurrent identical requests cannot both succeed (single check-and-set).
+- Полуоткрытые интервалы: смежные брони (09:00–09:30, 09:30–10:00) не сталкиваются,
+  но любое реальное пересечение отклоняется.
+- Слоты в прошлом, вне рабочих часов или пересекающие UTC-полночь отклоняются.
+- Забронированные слоты исчезают из доступности; отмена снова их освобождает.
+- Одновременные идентичные запросы не могут оба пройти (единый check-and-set).
 
-## Run
+## Запуск
 
 ```bash
 npm install
 npm run start:dev      # http://localhost:3000
 ```
 
-### Try it
+### Попробовать
 
 ```bash
-# Demo data: resource "res_alex", services "svc_haircut" (30m) / "svc_color" (90m),
-# available Mon–Fri 09:00–17:00 UTC.
+# Demo-данные: ресурс "res_alex", услуги "svc_haircut" (30м) / "svc_color" (90м),
+# доступны Пн–Пт 09:00–17:00 UTC.
 curl "localhost:3000/availability?resourceId=res_alex&serviceId=svc_haircut&day=2026-06-15"
 
 curl -X POST localhost:3000/bookings -H 'content-type: application/json' -d '{
@@ -67,40 +68,40 @@ curl -X POST localhost:3000/bookings -H 'content-type: application/json' -d '{
 docker build -t slotpilot . && docker run -p 3000:3000 slotpilot
 ```
 
-## Quality gates
+## Гейты качества
 
 ```bash
-npm run typecheck   # tsc --strict, no emit
+npm run typecheck   # tsc --strict, без эмита
 npm test            # jest unit + e2e
-npm run build       # compile to dist/
+npm run build       # компиляция в dist/
 ```
 
-## Frontend (`web/`)
+## Фронтенд (`web/`)
 
-A **Next.js 14** (App Router, TypeScript, Tailwind) public booking page with a
-warm editorial design — a four-step flow (service → day → time → details) that
-reads live availability and confirms instantly against this API.
+Публичная страница бронирования на **Next.js 14** (App Router, TypeScript, Tailwind) с
+тёплым редакционным дизайном — четырёхшаговый поток (услуга → день → время → детали),
+который читает доступность вживую и мгновенно подтверждает запись через это API.
 
 ```bash
-# 1. start the API (CORS is enabled for the frontend origin)
+# 1. запустить API (CORS включён для origin фронтенда)
 npm run build && PORT=3000 npm start
 
-# 2. start the web app
+# 2. запустить веб-приложение
 cd web && npm install
 NEXT_PUBLIC_API_URL=http://localhost:3000 npm run dev   # http://localhost:3001
 ```
 
-Set `CORS_ORIGINS` on the API (comma-separated) to lock down allowed origins in
-production; it defaults to `*`.
+Задайте `CORS_ORIGINS` на API (через запятую), чтобы ограничить разрешённые origin в
+продакшене; по умолчанию `*`.
 
-## Roadmap
+## Дорожная карта
 
-- [ ] TypeORM + Postgres adapter with `tstzrange` exclusion constraint
-- [ ] Organization timezone handling at the API edge (store UTC)
-- [ ] Notifications (email / SMS / Telegram) on booking & reminders
-- [ ] Online payment (deposit) on booking confirmation
-- [x] Next.js public booking page (`web/`)
+- [ ] Адаптер TypeORM + Postgres с ограничением исключения `tstzrange`
+- [ ] Обработка таймзоны организации на границе API (хранить UTC)
+- [ ] Уведомления (email / SMS / Telegram) при бронировании и напоминания
+- [ ] Онлайн-оплата (депозит) при подтверждении брони
+- [x] Публичная страница бронирования на Next.js (`web/`)
 
-## License
+## Лицензия
 
 MIT
